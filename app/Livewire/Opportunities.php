@@ -2,9 +2,11 @@
 
 namespace App\Livewire;
 
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Contracts\View\Factory;
 use Illuminate\Contracts\View\View;
 use Illuminate\Foundation\Application;
+use Illuminate\Support\Facades\Cache;
 use Livewire\Component;
 use Livewire\WithPagination;
 use App\Models\Item;
@@ -50,15 +52,37 @@ class Opportunities extends Component
 
     public function render(): View|Factory|Application
     {
-        $items = Item::query()
+        // Don't cache search results
+        if ($this->search) {
+            $items = $this->getItems();
+            return view('livewire.opportunities', ['items' => $items]);
+        }
+
+        // Only cache default views (first few pages with default sorting)
+        if ($this->sortField === 'name' &&
+            $this->sortDirection === 'asc' &&
+            in_array($this->perPage, [20, 50]) &&
+            $this->getPage() <= 5) {
+
+            $cacheKey = "items_page_{$this->getPage()}_per_page_{$this->perPage}";
+
+            $items = Cache::remember($cacheKey, now()->addMinutes(5), function () {
+                return $this->getItems();
+            });
+        } else {
+            $items = $this->getItems();
+        }
+
+        return view('livewire.opportunities', ['items' => $items]);
+    }
+
+    private function getItems(): LengthAwarePaginator
+    {
+        return Item::query()
             ->when($this->search, function ($query) {
                 $query->where('name', 'LIKE', '%' . $this->search . '%');
             })
             ->orderBy($this->sortField, $this->sortDirection)
             ->paginate($this->perPage);
-
-        return view('livewire.opportunities', [
-            'items' => $items
-        ]);
     }
 }
